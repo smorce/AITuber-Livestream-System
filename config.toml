@@ -1,0 +1,17 @@
+[llm]
+base_url = "http://127.0.0.1:2067/v1"
+timeout_seconds = 180
+
+[speech]
+base_url = "http://127.0.0.1:17864"
+model = "irodori-tts-mf"
+instructions = "甲高い女性の声で、ツンデレっぽい喋り方です。"
+seed = 42
+timeout_seconds = 300
+
+[playback]
+flag_lead = 0.300
+audio_lead = 0.150
+off_lead = 0.200
+max_idle_overlap = 0.300
+queue_limit = 10

@@ -1,0 +1,12 @@
+.venv/
+node_modules/
+.runtime/
+__pycache__/
+.pytest_cache/
+.env
+.env.*
+secrets/
+*token*
+*key*
+id_rsa*
+id_ed25519*

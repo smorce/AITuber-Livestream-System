@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Qwen3.8-27B EXL3 · DFlash2</title>
+  <style>
+    :root {
+      --bg: #161410;
+      --panel: #1f1a14;
+      --line: #3a3228;
+      --text: #ece4d6;
+      --muted: #9a8d7a;
+      --accent: #d4a056;
+      --user: #2a3328;
+      --bot: #241e18;
+      --think: #6e6354;
+      --warn: #c9a227;
+      --ok: #b7d59a;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font: 15px/1.55 "Segoe UI", "Hiragino Sans", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px 12px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+    }
+    header h1 { font-size: 15px; font-weight: 600; margin: 0; letter-spacing: 0.02em; }
+    header .sub { color: var(--muted); font-size: 12px; }
+    .grow { flex: 1; }
+    #status {
+      font-size: 12px;
+      padding: 3px 9px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      color: var(--muted);
+    }
+    #status.ok { color: var(--ok); border-color: #4a6a3a; }
+    #status.bad { color: #e09a8a; border-color: #7a3f32; }
+    button, select, input {
+      font: inherit;
+      color: var(--text);
+      background: #2a241c;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    button { cursor: pointer; }
+    button:hover { border-color: var(--accent); }
+    header button { padding: 6px 10px; }
+    .header-settings {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .header-settings label {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+    .header-settings input { width: 72px; padding: 4px 6px; }
+    #log {
+      flex: 1;
+      overflow: auto;
+      padding: 18px 16px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .msg { max-width: 792px; width: 100%; margin: 0 auto; }
+    .bubble {
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .user .bubble { background: var(--user); }
+    .assistant .bubble { background: var(--bot); }
+    .role {
+      font-size: 11px;
+      color: var(--muted);
+      margin: 0 0 4px 2px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .badge {
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      color: var(--muted);
+    }
+    .badge.warn { color: var(--warn); border-color: #6a5520; }
+    .badge.usage { color: var(--muted); }
+    details.think {
+      margin-bottom: 8px;
+      color: var(--think);
+      font-size: 13px;
+    }
+    details.think summary { cursor: pointer; color: var(--muted); }
+    .think-body { margin-top: 6px; white-space: pre-wrap; }
+    .compose {
+      border-top: 1px solid var(--line);
+      background: var(--panel);
+      padding: 12px 16px 16px;
+      max-width: 824px;
+      width: 100%;
+      margin: 0 auto;
+    }
+    .compose-row {
+      display: flex;
+      gap: 8px;
+      align-items: stretch;
+    }
+    textarea {
+      flex: 1;
+      min-width: 0;
+      min-height: 52px;
+      max-height: 180px;
+      resize: vertical;
+      padding: 10px 12px;
+      background: #2a241c;
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      font: inherit;
+    }
+    .compose-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .toggle {
+      min-width: 88px;
+      padding: 8px 10px;
+      font-size: 12px;
+      color: var(--muted);
+      background: #2a241c;
+    }
+    .toggle.on {
+      color: var(--accent);
+      background: #3a3220;
+      border-color: #6a5520;
+    }
+    #send {
+      min-width: 88px;
+      min-height: 44px;
+      padding: 0 16px;
+      font-weight: 600;
+    }
+    #send:disabled { opacity: 0.5; cursor: default; }
+    .compose-tools {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+      align-items: center;
+      margin-top: 10px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .compose-tools label {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      white-space: nowrap;
+    }
+    .compose-tools select { padding: 4px 8px; min-width: 88px; }
+    .compose-tools input[type="number"] { width: 80px; padding: 4px 6px; }
+    .compose-tools input[type="text"] {
+      width: min(280px, 100%);
+      padding: 4px 8px;
+    }
+    .compose-tools select:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    .throughput {
+      font-variant-numeric: tabular-nums;
+      padding: 4px 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #252018;
+      color: var(--muted);
+      min-width: 120px;
+      text-align: center;
+    }
+    .throughput.live {
+      color: var(--accent);
+      border-color: #6a5520;
+    }
+    details.inception {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    details.inception summary {
+      cursor: pointer;
+      user-select: none;
+    }
+    details.inception .inner {
+      margin-top: 8px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .hint {
+      margin-top: 8px;
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+    @media (max-width: 560px) {
+      .compose-row { flex-direction: column; }
+      .compose-actions {
+        flex-direction: row;
+        width: 100%;
+      }
+      .toggle, #send { flex: 1; min-width: 0; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Qwen3.8-27B EXL3</h1>
+      <div class="sub">DFlash2 · nvfp4 · 同一オリジン /v1</div>
+    </div>
+    <div class="grow"></div>
+    <div class="header-settings">
+      <label>max <input id="maxTokens" type="number" min="16" max="131072" value="32768" /></label>
+      <label>temp <input id="temp" type="number" min="0" max="2" step="0.05" value="0.3" /></label>
+    </div>
+    <span id="status">確認中</span>
+    <button type="button" id="clear">クリア</button>
+  </header>
+  <div id="log"></div>
+  <form id="form" class="compose">
+    <div class="compose-row">
+      <textarea id="input" rows="2" placeholder="メッセージを入力（Enter で送信、Shift+Enter で改行）" autofocus></textarea>
+      <div class="compose-actions">
+        <button type="button" id="thinkingBtn" class="toggle on" aria-pressed="true" title="enable_thinking">
+          thinking
+        </button>
+        <button id="send" type="submit">送信</button>
+      </div>
+    </div>
+    <div class="compose-tools">
+      <span id="throughput" class="throughput" title="生成中はライブ表示、完了後は直近リクエストの確定値">— tok/s</span>
+      <label>
+        effort
+        <select id="effort">
+          <option value="xhigh">xhigh</option>
+          <option value="high">high</option>
+          <option value="medium">medium</option>
+          <option value="low" selected>low</option>
+        </select>
+      </label>
+      <label>
+        budget
+        <input id="budget" type="number" min="-1" max="32768" placeholder="無制限" title="reasoning_budget_tokens" />
+      </label>
+      <details class="inception">
+        <summary>Inception message</summary>
+        <div class="inner">
+          <label>
+            <input id="budgetMsg" type="text" placeholder="予算超過時に思考へ挿入" />
+          </label>
+        </div>
+      </details>
+    </div>
+    <div class="hint">生成中はライブ tok/s、完了後は直近リクエストの確定値を表示。Enter で送信 · 停止可。</div>
+  </form>
+  <script>
+    const STORAGE_KEY = "qwen38-webui-settings";
+    const SETTINGS_VERSION = 7;
+    const DEFAULT_MAX_TOKENS = 32768;
+    const DEFAULT_TEMP = 0.3;
+    const DEFAULT_EFFORT = "low";
+    const VALID_EFFORTS = new Set(["xhigh", "high", "medium", "low"]);
+    const LEGACY_DEFAULT_MAX_TOKENS = [1024, 10000, 100000, 16384];
+    const LEGACY_DEFAULT_TEMP = 0.6;
+    const LEGACY_DEFAULT_EFFORTS = new Set(["xhigh", "medium"]);
+    const log = document.getElementById("log");
+    const form = document.getElementById("form");
+    const input = document.getElementById("input");
+    const sendBtn = document.getElementById("send");
+    const statusEl = document.getElementById("status");
+    const maxTokensEl = document.getElementById("maxTokens");
+    const tempEl = document.getElementById("temp");
+    const thinkingBtn = document.getElementById("thinkingBtn");
+    const effortEl = document.getElementById("effort");
+    const budgetEl = document.getElementById("budget");
+    const budgetMsgEl = document.getElementById("budgetMsg");
+    const throughputEl = document.getElementById("throughput");
+    const messages = [];
+    let abort = null;
+    let thinkingOn = true;
+    let lastTpsText = "— tok/s";
+    let savedEffort = DEFAULT_EFFORT;
+    let healthPrev = null;
+    let healthTimer = null;
+    let liveTps = false;
+
+    function setEffort(value) {
+      savedEffort = VALID_EFFORTS.has(value) ? value : DEFAULT_EFFORT;
+      effortEl.value = savedEffort;
+    }
+
+    function migrateEffort(stored) {
+      if (!stored || LEGACY_DEFAULT_EFFORTS.has(stored)) return DEFAULT_EFFORT;
+      return VALID_EFFORTS.has(stored) ? stored : DEFAULT_EFFORT;
+    }
+
+    function applyDefaults() {
+      maxTokensEl.value = String(DEFAULT_MAX_TOKENS);
+      tempEl.value = String(DEFAULT_TEMP);
+      setEffort(DEFAULT_EFFORT);
+    }
+
+    function loadSettings() {
+      applyDefaults();
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const s = JSON.parse(raw);
+        const version = s.version || 1;
+        if (version < SETTINGS_VERSION) {
+          const legacyMax = String(s.maxTokens ?? LEGACY_DEFAULT_MAX_TOKENS[0]);
+          maxTokensEl.value = LEGACY_DEFAULT_MAX_TOKENS.includes(Number(legacyMax))
+            ? DEFAULT_MAX_TOKENS
+            : (s.maxTokens ?? DEFAULT_MAX_TOKENS);
+          const legacyTemp = Number(s.temp ?? LEGACY_DEFAULT_TEMP);
+          tempEl.value = legacyTemp === LEGACY_DEFAULT_TEMP
+            ? DEFAULT_TEMP
+            : (s.temp ?? DEFAULT_TEMP);
+          setEffort(migrateEffort(s.effort));
+        } else {
+          if (s.maxTokens) maxTokensEl.value = s.maxTokens;
+          if (s.temp != null) tempEl.value = s.temp;
+          if (s.effort) setEffort(s.effort);
+        }
+        if (s.thinking != null) thinkingOn = s.thinking;
+        if (s.budget != null) budgetEl.value = s.budget;
+        if (s.budgetMsg) budgetMsgEl.value = s.budgetMsg;
+        if (s.lastTps) lastTpsText = s.lastTps;
+        if (version < SETTINGS_VERSION) saveSettings();
+      } catch (_) {}
+      throughputEl.textContent = lastTpsText;
+      syncThinkingUi();
+    }
+
+    function saveSettings() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+          version: SETTINGS_VERSION,
+          maxTokens: maxTokensEl.value,
+          temp: tempEl.value,
+          thinking: thinkingOn,
+          effort: savedEffort,
+          budget: budgetEl.value,
+          budgetMsg: budgetMsgEl.value,
+          lastTps: lastTpsText,
+        }));
+      } catch (_) {}
+    }
+
+    function syncThinkingUi() {
+      thinkingBtn.classList.toggle("on", thinkingOn);
+      thinkingBtn.setAttribute("aria-pressed", thinkingOn);
+      thinkingBtn.textContent = thinkingOn ? "thinking" : "thinking off";
+      effortEl.disabled = !thinkingOn;
+      effortEl.value = thinkingOn ? savedEffort : DEFAULT_EFFORT;
+    }
+
+    thinkingBtn.addEventListener("click", () => {
+      thinkingOn = !thinkingOn;
+      syncThinkingUi();
+      saveSettings();
+    });
+    [maxTokensEl, tempEl, budgetEl, budgetMsgEl].forEach((el) => {
+      el.addEventListener("change", saveSettings);
+      el.addEventListener("input", saveSettings);
+    });
+    effortEl.addEventListener("change", () => {
+      if (thinkingOn) setEffort(effortEl.value);
+      saveSettings();
+    });
+    effortEl.addEventListener("input", () => {
+      if (thinkingOn) setEffort(effortEl.value);
+      saveSettings();
+    });
+
+    loadSettings();
+
+    function formatTps(v) {
+      if (v == null || !Number.isFinite(v)) return "—";
+      if (v < 0.05) return "0";
+      return v < 10 ? v.toFixed(1) : String(Math.round(v));
+    }
+
+    function buildConfirmedThroughputText(usage, streamStart, firstTokenAt) {
+      if (!usage) return null;
+      const end = performance.now();
+      const prompt = Number(usage.prompt_tokens) || 0;
+      const completion = Number(usage.completion_tokens) || 0;
+      const totalSec = (end - streamStart) / 1000;
+      if (totalSec < 0.01 || prompt + completion <= 0) return null;
+
+      if (firstTokenAt) {
+        const prefillSec = (firstTokenAt - streamStart) / 1000;
+        const decodeSec = (end - firstTokenAt) / 1000;
+        if (prompt > 0 && prefillSec >= 0.01) {
+          const prefillTps = prompt / prefillSec;
+          if (completion > 0 && decodeSec >= 0.01) {
+            return `prefill ${formatTps(prefillTps)} · decode ${formatTps(completion / decodeSec)} tok/s`;
+          }
+          return `prefill ${formatTps(prefillTps)} tok/s`;
+        }
+        if (completion > 0 && decodeSec >= 0.01) {
+          return `${formatTps(completion / decodeSec)} tok/s`;
+        }
+      }
+      return `${formatTps((prompt + completion) / totalSec)} tok/s`;
+    }
+
+    function recordThroughput(usage, streamStart, firstTokenAt) {
+      const text = buildConfirmedThroughputText(usage, streamStart, firstTokenAt);
+      if (!text) return;
+      lastTpsText = text;
+      throughputEl.textContent = text;
+      throughputEl.classList.remove("live");
+      saveSettings();
+    }
+
+    function applyConfirmedThroughput() {
+      throughputEl.textContent = lastTpsText;
+      throughputEl.classList.remove("live");
+    }
+
+    function updateLiveThroughput(h) {
+      const now = Date.now();
+      const prompt = Number(h.prompt_tokens_total) || 0;
+      const completion = Number(h.completion_tokens_total) || 0;
+      if (!healthPrev) {
+        healthPrev = { t: now, prompt, completion };
+        throughputEl.textContent = "計測中…";
+        throughputEl.classList.add("live");
+        return;
+      }
+      const dt = (now - healthPrev.t) / 1000;
+      if (dt < 0.25) return;
+      const dPrompt = prompt - healthPrev.prompt;
+      const dComp = completion - healthPrev.completion;
+      healthPrev = { t: now, prompt, completion };
+      if (dPrompt === 0 && dComp === 0) {
+        throughputEl.textContent = "計測中…";
+        return;
+      }
+      const decode = dComp / dt;
+      const prefill = dPrompt / dt;
+      let text;
+      if (dPrompt > 0 && dComp > 0) {
+        text = `prefill ${formatTps(prefill)} · decode ${formatTps(decode)} tok/s`;
+      } else if (dComp > 0) {
+        text = `${formatTps(decode)} tok/s`;
+      } else {
+        text = `prefill ${formatTps(prefill)} tok/s`;
+      }
+      throughputEl.textContent = text;
+      throughputEl.classList.add("live");
+    }
+
+    function setHealthPollMs(ms) {
+      if (healthTimer) clearInterval(healthTimer);
+      healthTimer = setInterval(pollHealth, ms);
+    }
+
+    async function pollHealth() {
+      try {
+        const r = await fetch("/health");
+        const h = await r.json();
+        if (liveTps) updateLiveThroughput(h);
+        else applyConfirmedThroughput();
+        const r2 = await fetch("/v1/models");
+        const j = await r2.json();
+        const m = j.data && j.data[0];
+        const ctx = m && m.max_model_len;
+        const busy = h.busy ? "busy" : "idle";
+        statusEl.textContent = ctx ? `${busy} · ${ctx} tok` : busy;
+        statusEl.className = "ok";
+      } catch {
+        if (!liveTps) throughputEl.textContent = "offline";
+        throughputEl.classList.remove("live");
+        statusEl.textContent = "offline";
+        statusEl.className = "bad";
+      }
+    }
+    pollHealth();
+    setHealthPollMs(2000);
+
+    function addBubble(role) {
+      const wrap = document.createElement("div");
+      wrap.className = "msg " + role;
+      const roleEl = document.createElement("div");
+      roleEl.className = "role";
+      roleEl.textContent = role === "user" ? "あなた" : "アシスタント";
+      const bubble = document.createElement("div");
+      bubble.className = "bubble";
+      wrap.append(roleEl, bubble);
+      log.appendChild(wrap);
+      log.scrollTop = log.scrollHeight;
+      return { bubble, roleEl };
+    }
+
+    function setMeta(roleEl, { truncated, usage }) {
+      roleEl.querySelectorAll(".badge").forEach((n) => n.remove());
+      if (truncated) {
+        const b = document.createElement("span");
+        b.className = "badge warn";
+        b.textContent = "truncated";
+        roleEl.appendChild(b);
+      }
+      if (usage) {
+        const b = document.createElement("span");
+        b.className = "badge usage";
+        const r = usage.completion_tokens_details && usage.completion_tokens_details.reasoning_tokens;
+        const parts = [
+          `prompt ${usage.prompt_tokens}`,
+          `completion ${usage.completion_tokens}`,
+          `total ${usage.total_tokens}`,
+        ];
+        if (r) parts.push(`reasoning ${r}`);
+        b.textContent = parts.join(" · ");
+        roleEl.appendChild(b);
+      }
+    }
+
+    function setBusy(on) {
+      sendBtn.textContent = on ? "停止" : "送信";
+      liveTps = on;
+      if (on) {
+        healthPrev = null;
+        throughputEl.textContent = "計測中…";
+        throughputEl.classList.add("live");
+        setHealthPollMs(500);
+      } else {
+        setHealthPollMs(2000);
+      }
+    }
+
+    function renderAssistant(bubble, reasoning, content) {
+      bubble.replaceChildren();
+      if (reasoning) {
+        const d = document.createElement("details");
+        d.className = "think";
+        d.open = !content;
+        const s = document.createElement("summary");
+        s.textContent = "thinking";
+        const t = document.createElement("div");
+        t.className = "think-body";
+        t.textContent = reasoning;
+        d.append(s, t);
+        bubble.appendChild(d);
+      }
+      const body = document.createElement("div");
+      body.className = "content-body";
+      body.textContent = content || (reasoning ? "" : "…");
+      bubble.appendChild(body);
+    }
+
+    function buildRequestBody() {
+      const body = {
+        messages,
+        stream: true,
+        temperature: Number(tempEl.value) || DEFAULT_TEMP,
+        top_p: 0.95,
+        top_k: 20,
+        max_tokens: Number(maxTokensEl.value) || DEFAULT_MAX_TOKENS,
+        stream_options: { include_usage: true },
+        enable_thinking: thinkingOn,
+        reasoning: thinkingOn ? "on" : "off",
+      };
+      if (thinkingOn) body.reasoning_effort = savedEffort;
+      const budgetRaw = budgetEl.value.trim();
+      if (budgetRaw !== "") {
+        const budget = Number(budgetRaw);
+        if (!Number.isNaN(budget)) body.reasoning_budget_tokens = budget;
+      }
+      const msg = budgetMsgEl.value.trim();
+      if (msg) body.reasoning_budget_message = msg;
+      return body;
+    }
+
+    let chatEpoch = 0;
+    document.getElementById("clear").onclick = () => {
+      chatEpoch++;
+      if (abort) abort.abort();
+      abort = null;
+      window.AITuberChat.clear().catch(() => {});
+      messages.length = 0;
+      log.innerHTML = "";
+      setBusy(false);
+    };
+
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        form.requestSubmit();
+      }
+    });
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (abort) {
+        abort.abort();
+        abort = null;
+        setBusy(false);
+        return;
+      }
+      const text = input.value.trim();
+      if (!text) return;
+      await window.AITuberChat.beforeSubmit();
+      input.value = "";
+      messages.push({ role: "user", content: text });
+      addBubble("user").bubble.textContent = text;
+      const { bubble, roleEl } = addBubble("assistant");
+      bubble.textContent = "…";
+      abort = new AbortController();
+      const requestAbort = abort;
+      const requestEpoch = chatEpoch;
+      setBusy(true);
+      const streamStart = performance.now();
+      let firstTokenAt = null;
+      let reasoning = "";
+      let content = "";
+      let truncated = false;
+      let usage = null;
+      try {
+        const res = await fetch("/v1/chat/completions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: requestAbort.signal,
+          body: JSON.stringify(buildRequestBody()),
+        });
+        if (!res.ok) {
+          let detail = "HTTP " + res.status;
+          try {
+            const err = await res.json();
+            if (err.error && err.error.message) detail = err.error.message;
+          } catch (_) {}
+          throw new Error(detail);
+        }
+        const reader = res.body.getReader();
+        const dec = new TextDecoder();
+        let buf = "";
+        while (true) {
+          const { value, done } = await reader.read();
+          if (requestEpoch !== chatEpoch) return;
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          const parts = buf.split("\n\n");
+          buf = parts.pop();
+          for (const part of parts) {
+            const line = part.split("\n").find((l) => l.startsWith("data: "));
+            if (!line) continue;
+            const data = line.slice(6).trim();
+            if (data === "[DONE]") continue;
+            const obj = JSON.parse(data);
+            if (obj.speech_error) window.AITuberChat.notice(obj.speech_error);
+            if (obj.error) throw new Error(obj.error.message || "error");
+            if (obj.usage) usage = obj.usage;
+            if (obj.truncated) truncated = true;
+            const choice = obj.choices && obj.choices[0];
+            if (choice && choice.finish_reason === "length") truncated = true;
+            const delta = (choice && choice.delta) || {};
+            if (delta.reasoning_content) reasoning += delta.reasoning_content;
+            if (delta.content) content += delta.content;
+            if (delta.reasoning_content || delta.content) {
+              if (!firstTokenAt) firstTokenAt = performance.now();
+              renderAssistant(bubble, reasoning, content);
+            }
+            log.scrollTop = log.scrollHeight;
+          }
+        }
+        if (!content && !reasoning) bubble.textContent = "(空の応答)";
+        setMeta(roleEl, { truncated, usage });
+        recordThroughput(usage, streamStart, firstTokenAt);
+        const assistantMsg = { role: "assistant", content: content || "" };
+        if (reasoning) assistantMsg.reasoning_content = reasoning;
+        messages.push(assistantMsg);
+      } catch (err) {
+        if (requestEpoch !== chatEpoch) return;
+        if (err.name === "AbortError") {
+          if (!content && !reasoning) bubble.textContent = "(停止)";
+          else {
+            renderAssistant(bubble, reasoning, content);
+            setMeta(roleEl, { truncated: false, usage });
+            recordThroughput(usage, streamStart, firstTokenAt);
+            const assistantMsg = { role: "assistant", content: content || "" };
+            if (reasoning) assistantMsg.reasoning_content = reasoning;
+            messages.push(assistantMsg);
+          }
+        } else {
+          bubble.textContent = "Error: " + err.message;
+        }
+      } finally {
+        if (abort === requestAbort) {
+          abort = null;
+          setBusy(false);
+          applyConfirmedThroughput();
+          input.focus();
+        }
+      }
+    });
+  </script>
+<script src="/web/chat-bridge.js"></script>
+</body>
+</html>
