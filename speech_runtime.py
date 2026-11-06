@@ -20,6 +20,11 @@ class SpeechRuntime:
         self.log_file = None
         self.model_id = None
         self.actual_device = None
+        self.on_status = None
+
+    async def report(self, phase, **details):
+        if self.on_status:
+            await self.on_status(phase, **details)
 
     def executable(self):
         configured = self.config.get('executable')
@@ -31,12 +36,18 @@ class SpeechRuntime:
 
     async def start(self, device):
         await self.stop()
+        voice_args = []
+        if self.config.get('reference_audio'):
+            reference = (self.runtime_dir.parent / self.config['reference_audio']).resolve()
+            if not reference.is_file():
+                raise FileNotFoundError(f'Reference audio not found: {reference}')
+            voice_args = ['--add-voice', 'reference=' + str(reference)]
         self.runtime_dir.mkdir(exist_ok=True)
         self.log_file = (self.runtime_dir / 'speech.log').open('ab')
         port = urlsplit(self.config['base_url']).port or 17864
         self.process = await asyncio.create_subprocess_exec(
             self.executable(), 'serve', self.config['model'], '--host', '127.0.0.1',
-            '--port', str(port), '--device', device,
+            '--port', str(port), '--device', device, *voice_args,
             stdout=self.log_file, stderr=self.log_file,
             creationflags=0x08000000 if os.name == 'nt' else 0,
         )
@@ -77,10 +88,14 @@ class SpeechRuntime:
             for device in ([self.device] if self.device == 'cpu' else ['gpu', 'cpu']):
                 try:
                     if not self.process or self.process.returncode is not None or self.device != device:
+                        await self.report('loading', device=device)
                         await self.start(device)
+                    await self.report('synthesizing', device=self.actual_device or device)
                     async with httpx.AsyncClient(trust_env=False, timeout=self.config['timeout_seconds']) as client:
                         r = await client.post(self.config['base_url'] + '/v1/audio/speech', json={
-                            'model': self.model_id, 'voice': 'none', 'input': text,
+                            'model': self.model_id,
+                            'voice': 'reference' if self.config.get('reference_audio') else 'none',
+                            'input': text,
                             'instructions': self.config['instructions'], 'seed': self.config['seed'],
                             'response_format': 'wav',
                         })
@@ -93,3 +108,4 @@ class SpeechRuntime:
                     await self.stop()
                     if device == 'cpu':
                         raise
+                    await self.report('retrying_cpu', device='cpu')

@@ -34,6 +34,79 @@ def test_clear_invalidates_generation():
     assert not h.audio
 
 
+def test_speech_progress_and_failure_are_reported(monkeypatch):
+    async def run():
+        h = Hub()
+        events = []
+        finished = asyncio.Event()
+        async def notify(event):
+            events.append(event)
+            if event.get('phase') in ('waiting', 'failed'):
+                finished.set()
+        monkeypatch.setattr(h, 'notify', notify)
+        buf = io.BytesIO()
+        with wave.open(buf, 'wb') as w:
+            w.setparams((1, 2, 48000, 0, 'NONE', 'not compressed'))
+            w.writeframes(b'\0\0' * 480)
+        async def synthesize(text):
+            if text == '失敗。':
+                raise RuntimeError('Synthesis timeout')
+            return buf.getvalue()
+        monkeypatch.setattr(h.speech, 'synthesize', synthesize)
+        await h.set_speech_status('one', 'queued', 0)
+        h.reserved.add('one')
+        h.jobs.put_nowait(('one', 0, '一文。二文。'))
+        worker = asyncio.create_task(h.worker())
+        try:
+            await asyncio.wait_for(finished.wait(), 2)
+            progress = [e for e in events if e.get('phase') == 'synthesizing']
+            assert [e['completed'] for e in progress] == [1, 2]
+            assert all(e['total'] == 2 for e in progress)
+            assert h.speech_states['one']['phase'] == 'waiting'
+            finished.clear()
+            h.reserved.add('two')
+            h.jobs.put_nowait(('two', 0, '失敗。'))
+            await asyncio.wait_for(finished.wait(), 2)
+            assert h.speech_states['two']['phase'] == 'failed'
+            assert 'Synthesis timeout' in h.speech_states['two']['message']
+            h.clear_state()
+            await h.set_speech_status('two', 'waiting', 0)
+            assert not h.speech_states
+        finally:
+            worker.cancel()
+            try:
+                await worker
+            except asyncio.CancelledError:
+                pass
+    asyncio.run(run())
+
+
+def test_chat_monitor_receives_current_speech_snapshot():
+    with TestClient(app) as client:
+        with client.websocket_connect('/ws?role=chat', headers={'Origin':'http://testserver'}) as monitor:
+            assert monitor.receive_json()['type'] == 'hello'
+            snapshot = monitor.receive_json()
+            assert snapshot == {'type':'speech_snapshot', 'generation':0, 'states':[], 'tv':{'connected':False, 'ready':False}}
+
+
+def test_playback_status_includes_audio_end_and_failure_reason():
+    headers = {'Origin':'http://testserver'}
+    with TestClient(app) as client:
+        with client.websocket_connect('/ws', headers=headers) as tv:
+            tv.receive_json()
+            with client.websocket_connect('/ws?role=chat', headers=headers) as monitor:
+                monitor.receive_json()
+                monitor.receive_json()
+                server.hub.current = 'speech-id'
+                for event, phase in [('started','playing'), ('audio_ended','finishing'), ('failed','failed')]:
+                    tv.send_json({'type':event, 'id':'speech-id', 'generation':0, 'message':'Video decode failed'})
+                    status = monitor.receive_json()
+                    assert status['type'] == 'speech_status'
+                    assert status['phase'] == phase
+                assert status['message'] == 'Video decode failed'
+                assert server.hub.current is None
+
+
 def test_only_public_assets_served():
     with TestClient(app) as client:
         assert client.get('/').status_code == 200

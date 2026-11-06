@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 import re
 import tomllib
+import time
 from uuid import uuid4
 import wave
 
@@ -58,6 +59,7 @@ class Hub:
         self.ready = False
         self.current = None
         self.reserved = set()
+        self.speech_states = {}
         self.monitors = set()
         self.llm_lock = asyncio.Lock()
         self.llm_task = None
@@ -69,6 +71,7 @@ class Hub:
         self.pending.clear()
         self.audio.clear()
         self.reserved.clear()
+        self.speech_states.clear()
         self.current = None
         while not self.jobs.empty():
             self.jobs.get_nowait()
@@ -80,9 +83,30 @@ class Hub:
             except (RuntimeError, WebSocketDisconnect):
                 self.monitors.discard(ws)
 
+    def tv_status(self):
+        return {'connected': self.owner is not None, 'ready': self.ready}
+
+    async def set_speech_status(self, ident, phase, generation, **details):
+        if generation != self.generation:
+            return
+        previous = self.speech_states.get(ident, {})
+        now = time.time()
+        state = {**previous, 'type':'speech_status', 'id':ident, 'generation':generation,
+                 'phase':phase, 'created_at':previous.get('created_at', now),
+                 'phase_started_at':previous.get('phase_started_at', now) if previous.get('phase') == phase else now,
+                 **details}
+        self.speech_states[ident] = state
+        for old_id, old in list(self.speech_states.items()):
+            if len(self.speech_states) <= 40:
+                break
+            if old['phase'] in ('completed', 'failed', 'cancelled'):
+                self.speech_states.pop(old_id)
+        await self.notify(state)
+
     async def dispatch(self):
         if self.owner and self.ready and self.current is None and self.pending:
             self.current = self.pending.popleft()
+            await self.set_speech_status(self.current, 'preparing_playback', self.generation)
             await self.owner.send_json({'type': 'utterance', 'id': self.current,
                                         'generation': self.generation,
                                         'url': '/api/audio/' + self.current})
@@ -94,16 +118,26 @@ class Hub:
             if generation != self.generation:
                 continue
             try:
+                parts = split_text(text)
+                completed = 0
+                async def runtime_status(phase, **details):
+                    await self.set_speech_status(ident, phase, generation, completed=completed, total=len(parts), **details)
+                self.speech.on_status = runtime_status
+                await runtime_status('loading' if self.speech.process is None else 'synthesizing')
                 async def generate():
+                    nonlocal completed
                     chunks = []
-                    for part in split_text(text):
+                    for part in parts:
                         chunks.append(await self.speech.synthesize(part))
+                        completed += 1
+                        await runtime_status('synthesizing')
                     return join_wavs(chunks)
                 self.synth_task = asyncio.create_task(generate())
                 audio = await self.synth_task
                 if generation == self.generation:
                     self.audio[ident] = audio
                     self.pending.append(ident)
+                    await self.set_speech_status(ident, 'waiting', generation)
                     await self.dispatch()
             except asyncio.CancelledError:
                 if asyncio.current_task().cancelling():
@@ -111,8 +145,9 @@ class Hub:
             except Exception as exc:
                 self.reserved.discard(ident)
                 log.exception('Synthesis failed: %s', ident)
-                await self.notify({'type': 'speech_error', 'id': ident, 'message': str(exc)})
+                await self.set_speech_status(ident, 'failed', generation, message=f'{type(exc).__name__}: {exc}')
             finally:
+                self.speech.on_status = None
                 self.synth_task = None
 
 
@@ -227,6 +262,7 @@ async def chat(request: Request):
                     else:
                         ident = uuid4().hex
                         hub.reserved.add(ident)
+                        await hub.set_speech_status(ident, 'queued', generation)
                         hub.jobs.put_nowait((ident, generation, content))
                 yield 'data: [DONE]\n\n'
             except asyncio.CancelledError:
@@ -248,6 +284,7 @@ async def clear():
         hub.synth_task.cancel()
     if hub.owner:
         await hub.owner.send_json({'type': 'clear', 'generation': hub.generation})
+    await hub.notify({'type':'speech_snapshot', 'generation':hub.generation, 'states':[], 'tv':hub.tv_status()})
     return {'generation': hub.generation}
 
 
@@ -273,6 +310,11 @@ async def websocket(ws: WebSocket):
         hub.owner = ws
         hub.ready = False
     await ws.send_json({'type': 'hello', 'owner': owner, 'generation': hub.generation, **CONFIG['playback']})
+    if monitor:
+        await ws.send_json({'type':'speech_snapshot', 'generation':hub.generation,
+                            'states':list(hub.speech_states.values()), 'tv':hub.tv_status()})
+    elif owner:
+        await hub.notify({'type':'tv_status', **hub.tv_status()})
     try:
         while True:
             event = await ws.receive_json()
@@ -284,6 +326,7 @@ async def websocket(ws: WebSocket):
                     await ws.send_json({'type': 'claim_denied', 'message': 'Preview cannot play audio'})
                 elif hub.owner is ws:
                     await ws.send_json({'type': 'role', 'owner': True})
+                    await hub.notify({'type':'tv_status', **hub.tv_status()})
                 elif hub.current is not None:
                     await ws.send_json({'type': 'claim_denied', 'message': 'Another TV is playing speech'})
                 else:
@@ -301,15 +344,19 @@ async def websocket(ws: WebSocket):
                 continue
             if event.get('type') == 'ready':
                 hub.ready = bool(event.get('ready'))
+                await hub.notify({'type':'tv_status', **hub.tv_status()})
             if event.get('id') == hub.current and event.get('generation') == hub.generation:
                 if event.get('type') in ('started', 'ended', 'failed', 'cancelled'):
                     log.info('Speech %s: %s', event['type'], hub.current)
+                phases = {'started':'playing', 'audio_ended':'finishing', 'ended':'completed', 'failed':'failed', 'cancelled':'cancelled'}
+                if event.get('type') in phases:
+                    details = {'message':event.get('message') or 'Speech playback failed'} if event['type'] == 'failed' else {}
+                    await hub.set_speech_status(hub.current, phases[event['type']], hub.generation, **details)
                 if event.get('type') in ('ended', 'failed', 'cancelled'):
                     ident = hub.current
                     hub.audio.pop(ident, None)
                     hub.reserved.discard(ident)
                     hub.current = None
-                    await hub.notify({'type': 'speech_status', **event})
             await hub.dispatch()
     except (WebSocketDisconnect, RuntimeError):
         pass
@@ -321,8 +368,9 @@ async def websocket(ws: WebSocket):
             if hub.current:
                 hub.audio.pop(hub.current, None)
                 hub.reserved.discard(hub.current)
-                await hub.notify({'type': 'speech_error', 'message': 'TV disconnected; active speech cancelled'})
+                await hub.set_speech_status(hub.current, 'failed', hub.generation, message='TV disconnected; active speech cancelled')
                 hub.current = None
+            await hub.notify({'type':'tv_status', **hub.tv_status()})
 
 
 PUBLIC = {'web/index.html', 'web/playback-core.js', 'web/tv-controller.js', 'web/chat-bridge.js', TV}

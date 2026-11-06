@@ -29,13 +29,13 @@
  function audioContext(){context??=new AudioContext();return context;}
  function remaining(clip){return Number.isFinite(clip.duration)?Math.max(0,(clip.duration-clip.currentTime)/clip.playbackRate):Infinity;}
  function stopSource(){if(source){source.onended=null;try{source.stop();}catch{}source.disconnect();source=null;}clearTimeout(guardTimer);guardTimer=null;buffer=null;}
- function cancel(reason='cancelled',notify=true){
+ function cancel(reason='cancelled',notify=true,message){
    const id=machine.id||loading?.id;
    loading=null;stopSource();machine.cancel();setFlag(false);overlapAt=0;
    if(pendingTransition){pendingTransition.to.pause();pendingTransition=null;}
-   if(id&&notify)send({type:reason,id,generation});
+   if(id&&notify)send({type:reason,id,generation,message});
  }
- function fail(message){cancel('failed');status('Error: '+message);}
+ function fail(message){cancel('failed',true,message);status('Error: '+message);}
  function ready(){return owner&&context?.state==='running'&&!document.hidden&&!debugOn&&isVideo&&!pendingTransition&&!video.paused&&speechReady&&speechVideo.readyState>=2&&!custom&&(machine.id||(!speechFlag&&video!==speechVideo));}
  function updateReady(){
    const value=!!ready();if(value!==lastReady){lastReady=value;send({type:'ready',ready:value});}
@@ -86,7 +86,7 @@
    const id=machine.id;
    source=audioContext().createBufferSource();source.buffer=buffer;source.connect(context.destination);
    startedAt=context.currentTime;overlapAt=performance.now();machine.start();setFlag(true);
-   source.onended=()=>{if(machine.id===id){machine.audioEnded(id);setFlag(false);if(video===speechVideo)clearTimeout(guardTimer);}};
+   source.onended=()=>{if(machine.id===id){machine.audioEnded(id);setFlag(false);send({type:'audio_ended',id,generation});if(video===speechVideo)clearTimeout(guardTimer);}};
    source.start();send({type:'started',id,generation});
    for(const clip of videos)clip.muted=true;
    guardTimer=setTimeout(()=>{if(machine.id===id&&video!==speechVideo)fail('Speech video transition timeout');},cfg.max_idle_overlap*1000);

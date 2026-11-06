@@ -14,6 +14,63 @@ function wav(seconds){
  return b;
 }
 
+test('チャットに合成進捗・待機理由・失敗・再接続後の状態を表示する',{timeout:20000},async()=>{
+ const browser=await chromium.launch({executablePath:executable,headless:true});
+ try{
+  const page=await browser.newPage();let peer,connections=0,snapshot=[];
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.route('**/api/clear',r=>r.fulfill({json:{generation:1}}));
+  await page.routeWebSocket('**/ws?role=chat',ws=>{
+   peer=ws;connections++;
+   ws.send(JSON.stringify({type:'hello',generation:0,owner:false}));
+   ws.send(JSON.stringify({type:'speech_snapshot',generation:0,states:snapshot,tv:{connected:false,ready:false}}));
+  });
+  await page.goto(base+'/');
+  await page.waitForFunction(()=>!!window.AITuberChat);
+  const state={type:'speech_status',id:'test-progress',generation:0,created_at:Date.now()/1000-7,total:3,completed:0};
+  const row=page.locator('[data-speech-id="test-progress"]');
+  const send=phase=>peer.send(JSON.stringify({...state,...phase}));
+  send({phase:'loading'});
+  await row.filter({hasText:'読み込み中'}).waitFor();
+  assert.match(await row.textContent(),/0\/3文 完了.*経過\d+秒/);
+  send({phase:'synthesizing',completed:1,device:'Vulkan0'});
+  await row.filter({hasText:'1/3文 完了'}).waitFor();
+  send({phase:'retrying_cpu',device:'cpu'});
+  await row.filter({hasText:'CPUで再試行中'}).waitFor();
+  send({phase:'waiting'});
+  await row.filter({hasText:'TV未接続'}).waitFor();
+  peer.send(JSON.stringify({type:'tv_status',connected:true,ready:false}));
+  await row.filter({hasText:'TVの再生準備待ち'}).waitFor();
+  send({phase:'preparing_playback'});
+  await row.filter({hasText:'動画終端待ち'}).waitFor();
+  send({phase:'playing'});
+  await row.filter({hasText:'音声再生中'}).waitFor();
+  send({phase:'finishing'});
+  await row.filter({hasText:'音声終了'}).waitFor();
+  send({phase:'completed'});
+  await row.filter({hasText:'音声再生完了'}).waitFor();
+  send({phase:'failed',message:'Synthesis timeout <test>'});
+  await row.filter({hasText:'音声処理に失敗'}).waitFor();
+  assert.match(await row.textContent(),/Synthesis timeout <test>/);
+  assert.equal(await row.locator('test').count(),0);
+  snapshot=[{...state,phase:'synthesizing',completed:2}];
+  send(snapshot[0]);
+  peer.close();
+  await row.filter({hasText:'接続断'}).waitFor();
+  await row.filter({hasText:'2/3文 完了'}).waitFor();
+  await page.waitForFunction(()=>!document.querySelector('[data-speech-id]').textContent.includes('接続断'));
+  assert.equal(connections,2);
+  fs.mkdirSync(path.join(__dirname,'../.runtime'),{recursive:true});
+  await page.screenshot({path:path.join(__dirname,'../.runtime/speech-status.png')});
+  await page.locator('#clear').click();
+  await page.waitForTimeout(100);
+  send({phase:'playing'});
+  await page.waitForTimeout(100);
+  assert.equal(await page.locator('[data-speech-id]').count(),0);
+  assert.deepEqual(errors,[]);
+ }finally{await browser.close();}
+});
+
 for(const automatic of [false,true])test(automatic?'ボタン操作なしで音声を有効化して再生権を取得する':'再生ボタンは動画だけを再生し音声の再生先を変更しない',{timeout:40000},async()=>{
  const browser=await chromium.launch({executablePath:executable,headless:true,args:automatic?['--autoplay-policy=no-user-gesture-required']:[]});
  try{
