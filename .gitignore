@@ -11,3 +11,7 @@ secrets/
 id_rsa*
 id_ed25519*
 基準音声/
+soulx_flashhead_windows_rtx4090_quickstart/audio.cpp/
+soulx_flashhead_windows_rtx4090_quickstart/runtime/
+soulx_flashhead_windows_rtx4090_quickstart/downloads/
+soulx_flashhead_windows_rtx4090_quickstart/output/

@@ -139,7 +139,7 @@ test('実動画で再生境界・中断・重複・切替失敗を検証する',
    await page.waitForFunction(()=>!video.seeking);
    if(scenario.endsWith('transition-failure'))await page.evaluate(()=>{window.switchVideo=()=>{};});
    peer.send(JSON.stringify({type:'utterance',id:'test-'+scenario,generation:0,url:'/api/audio/test-'+scenario}));
-   await page.waitForFunction(()=>AITuberTV.snapshot().phase==='playing',{},{timeout:15000});
+   await page.waitForFunction(()=>AITuberTV.snapshot().phase==='playing',{},{timeout:15000}).catch(async error=>{console.error({scenario,messages,snapshot:await page.evaluate(()=>AITuberTV.snapshot()),status:await page.locator('#status').textContent()});throw error;});
    if(scenario==='clear'){
     peer.send(JSON.stringify({type:'clear',generation:1}));
     await page.waitForFunction(()=>AITuberTV.snapshot().id===null);

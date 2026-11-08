@@ -1,5 +1,7 @@
 [llm]
-base_url = "http://127.0.0.1:2067/v1"
+base_url = "http://127.0.0.1:1067/v1"
+model = "Qwen3.5-35B-A3B-GGUF-UD-MXFP4_MOE"
+backend = "llama_cpp"
 timeout_seconds = 180
 
 [speech]
@@ -16,3 +18,13 @@ audio_lead = 0.150
 off_lead = 0.200
 max_idle_overlap = 0.300
 queue_limit = 10
+
+[video]
+enabled = true
+kit = "soulx_flashhead_windows_rtx4090_quickstart"
+size = 512
+steps = 4
+seed = 42
+timeout_seconds = 600
+max_audio_seconds = 180
+disk_reserve_gib = 10

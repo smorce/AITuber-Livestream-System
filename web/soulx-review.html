@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ja">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SoulX 生成動画の確認</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#151719;color:#eee;font:15px/1.6 system-ui,sans-serif}main{max-width:1100px;margin:auto;padding:24px}h1{font-size:23px;margin:0 0 8px}p{color:#afb9c3;margin:8px 0 18px}.tools{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:16px 0}button,select,input{font:inherit}button,select,.file{border:1px solid #58626d;background:#252b31;color:#fff;border-radius:6px;padding:8px 12px}button,.file{cursor:pointer}button:hover,.file:hover{background:#38434e}video{display:block;width:min(100%,768px);max-height:70vh;object-fit:contain;background:#000;margin:auto}#stage{background:#08090a;border:1px solid #39414a;border-radius:8px;padding:16px}#details{font-variant-numeric:tabular-nums;white-space:pre-wrap;color:#b5c8d9}#message{min-height:25px;color:#e4c68d}label{display:flex;align-items:center;gap:7px}a{color:#abd5ff}input[type=file]{max-width:270px}.hint{font-size:13px}
+</style>
+<main>
+<h1>SoulX 生成動画の確認</h1>
+<p>生成したMP4の映像と音声をそのまま再生します。CRT効果・拡大・位置補正はかかりません。</p>
+<div class="tools">
+ <label>動画 <select id="clips" aria-label="確認する動画"></select></label>
+ <button id="refresh" type="button">一覧を更新</button>
+ <label class="file">手元のMP4を開く <input id="file" type="file" accept="video/*,.mp4"></label>
+</div>
+<div id="stage"><video id="player" controls playsinline preload="metadata"></video></div>
+<div class="tools">
+ <button id="back" type="button">1コマ戻る</button><button id="forward" type="button">1コマ進む</button>
+ <label>速度 <select id="speed"><option value="0.25">0.25倍</option><option value="0.5">0.5倍</option><option value="1" selected>1倍</option><option value="1.5">1.5倍</option><option value="2">2倍</option></select></label>
+ <label><input id="loop" type="checkbox">繰り返し</label>
+</div>
+<div id="details" role="status">動画を選んでください。</div>
+<div id="message" role="status"></div>
+<p class="hint">コマ送りは25fps（1コマ0.04秒）を基準にしています。音声はプレーヤーの再生ボタンで開始します。この画面はTVの再生権を取得しません。<br>「最新の生成動画」は、次回から生成成功のたびに上書き保存されます。一覧を更新して選び直してください。手元のファイルはアップロードされません。</p>
+<a href="/" target="_blank" rel="noopener">チャット画面を開く</a>
+</main>
+<script>
+'use strict';
+const $=id=>document.getElementById(id),player=$('player');
+let objectURL=null,entries=[],selectedLabel='';
+function details(){
+ if(!Number.isFinite(player.duration))return;
+ $('details').textContent=`${selectedLabel}\n${player.videoWidth} × ${player.videoHeight} px · ${player.currentTime.toFixed(3)} / ${player.duration.toFixed(3)} 秒 · ${player.playbackRate}倍`;
+}
+function select(url,label){
+ player.pause();if(objectURL){URL.revokeObjectURL(objectURL);objectURL=null;}
+ selectedLabel=label;$('message').textContent='';player.src=url;player.load();
+}
+async function refresh(){
+ try{
+  const response=await fetch('/api/soulx-review/videos',{cache:'no-store'});
+  if(!response.ok)throw new Error('Video list request failed');
+  const previous=$('clips').value;entries=(await response.json()).videos;
+  $('clips').replaceChildren();
+  for(const entry of entries){const option=document.createElement('option');option.value=entry.id;option.textContent=`${entry.label}（${new Date(entry.updated_at*1000).toLocaleString('ja-JP')}）`;$('clips').appendChild(option);}
+  if(entries.some(entry=>entry.id===previous))$('clips').value=previous;
+  if(!player.getAttribute('src')&&entries.length)choose();
+  if(!entries.length)$('message').textContent='保存済み動画はありません。手元のMP4を開くこともできます。';
+ }catch(error){$('message').textContent='Error: '+error.message+' · 手元のMP4を開くこともできます。';}
+}
+function choose(){const entry=entries.find(entry=>entry.id===$('clips').value);if(entry)select(entry.url,entry.label);}
+$('clips').addEventListener('change',choose);
+$('refresh').addEventListener('click',async()=>{await refresh();if(!objectURL)choose();});
+$('file').addEventListener('change',event=>{const file=event.target.files[0];if(!file)return;select('',file.name);objectURL=URL.createObjectURL(file);player.src=objectURL;player.load();});
+function step(direction){player.pause();if(Number.isFinite(player.duration))player.currentTime=Math.max(0,Math.min(player.duration,player.currentTime+direction/25));}
+$('back').addEventListener('click',()=>step(-1));$('forward').addEventListener('click',()=>step(1));
+$('speed').addEventListener('change',()=>{player.playbackRate=Number($('speed').value);details();});
+$('loop').addEventListener('change',()=>{player.loop=$('loop').checked;});
+player.addEventListener('loadedmetadata',()=>{player.playbackRate=Number($('speed').value);details();});
+player.addEventListener('timeupdate',details);
+player.addEventListener('error',()=>{$('message').textContent='Error: Video could not be loaded or decoded';});
+window.addEventListener('pagehide',()=>{if(objectURL)URL.revokeObjectURL(objectURL);});
+if(location.protocol==='http:'||location.protocol==='https:')refresh();else $('message').textContent='手元のMP4を選択してください。サーバー経由で開くと保存済み動画の一覧も使えます。';
+</script>
+</html>

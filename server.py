@@ -17,6 +17,7 @@ from fastapi.responses import FileResponse, Response, StreamingResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from speech_runtime import SpeechRuntime
+from video_runtime import VideoRuntime
 
 ROOT = Path(__file__).resolve().parent
 CONFIG = tomllib.loads((ROOT / 'config.toml').read_text(encoding='utf-8'))
@@ -55,6 +56,8 @@ class Hub:
         self.jobs = asyncio.Queue()
         self.pending = deque()
         self.audio = {}
+        self.video = {}
+        self.video_runtime = VideoRuntime(CONFIG.get('video', {}), ROOT, ROOT / '.runtime/video')
         self.owner = None
         self.ready = False
         self.current = None
@@ -70,6 +73,9 @@ class Hub:
         self.generation += 1
         self.pending.clear()
         self.audio.clear()
+        for ident in list(self.video):
+            self.video_runtime.cleanup(ident)
+        self.video.clear()
         self.reserved.clear()
         self.speech_states.clear()
         self.current = None
@@ -109,7 +115,9 @@ class Hub:
             await self.set_speech_status(self.current, 'preparing_playback', self.generation)
             await self.owner.send_json({'type': 'utterance', 'id': self.current,
                                         'generation': self.generation,
-                                        'url': '/api/audio/' + self.current})
+                                        'url': '/api/audio/' + self.current,
+                                        'mode': 'lipsync' if self.current in self.video else 'fixed',
+                                        'video_url': '/api/video/' + self.current if self.current in self.video else None})
 
     async def worker(self):
         while True:
@@ -131,7 +139,21 @@ class Hub:
                         chunks.append(await self.speech.synthesize(part))
                         completed += 1
                         await runtime_status('synthesizing')
-                    return join_wavs(chunks)
+                    audio = join_wavs(chunks)
+                    if CONFIG.get('video', {}).get('enabled'):
+                        self.video_runtime.on_status = runtime_status
+                        try:
+                            path = await self.video_runtime.generate(ident, audio)
+                            if generation == self.generation:
+                                self.video[ident] = path
+                            else:
+                                self.video_runtime.cleanup(ident)
+                        except Exception as exc:
+                            log.exception('Video generation failed: %s', ident)
+                            await self.set_speech_status(ident, 'video_fallback', generation, warning=f'Fixed video fallback: {exc}')
+                        finally:
+                            self.video_runtime.on_status = None
+                    return audio
                 self.synth_task = asyncio.create_task(generate())
                 audio = await self.synth_task
                 if generation == self.generation:
@@ -142,6 +164,7 @@ class Hub:
             except asyncio.CancelledError:
                 if asyncio.current_task().cancelling():
                     raise
+                await self.speech.stop()
             except Exception as exc:
                 self.reserved.discard(ident)
                 log.exception('Synthesis failed: %s', ident)
@@ -158,6 +181,10 @@ hub = Hub()
 async def lifespan(app):
     global hub
     hub = Hub()
+    if hub.video_runtime.work.exists():
+        for path in hub.video_runtime.work.iterdir():
+            if path.is_dir() and re.fullmatch('[a-f0-9]{32}', path.name):
+                hub.video_runtime.cleanup(path.name)
     worker = asyncio.create_task(hub.worker())
     yield
     worker.cancel()
@@ -232,7 +259,11 @@ async def chat(request: Request):
                     model_data = await client.get(CONFIG['llm']['base_url'] + '/models')
                     model_data.raise_for_status()
                     payload = dict(body)
-                    payload['model'] = model_data.json()['data'][0]['id']
+                    payload['model'] = CONFIG['llm'].get('model', model_data.json()['data'][0]['id'])
+                    if CONFIG['llm'].get('backend') == 'llama_cpp':
+                        payload['chat_template_kwargs'] = {'enable_thinking': bool(payload.pop('enable_thinking', False))}
+                        for field in ('reasoning', 'reasoning_effort', 'reasoning_budget', 'reasoning_budget_tokens', 'reasoning_budget_message'):
+                            payload.pop(field, None)
                     payload['stream'] = True
                     payload.pop('generation', None)
                     async with client.stream('POST', CONFIG['llm']['base_url'] + '/chat/completions', json=payload) as upstream:
@@ -280,7 +311,7 @@ async def clear():
     hub.clear_state()
     if hub.llm_task:
         hub.llm_task.cancel()
-    if hub.synth_task:
+    if hub.synth_task and not hub.synth_task.cancelling():
         hub.synth_task.cancel()
     if hub.owner:
         await hub.owner.send_json({'type': 'clear', 'generation': hub.generation})
@@ -293,6 +324,14 @@ async def audio(ident: str):
     if ident not in hub.audio:
         raise HTTPException(404, 'Audio expired or unavailable')
     return Response(hub.audio[ident], media_type='audio/wav', headers={'Cache-Control': 'no-store'})
+
+
+@app.get('/api/video/{ident}')
+async def generated_video(ident: str):
+    path = hub.video.get(ident)
+    if path is None or not path.is_file():
+        raise HTTPException(404, 'Video expired or unavailable')
+    return FileResponse(path, media_type='video/mp4', headers={'Cache-Control': 'no-store'})
 
 
 @app.websocket('/ws')
@@ -342,6 +381,8 @@ async def websocket(ws: WebSocket):
                 continue
             if hub.owner is not ws:
                 continue
+            if event.get('type') == 'fallback' and event.get('id') == hub.current and event.get('generation') == hub.generation:
+                await hub.set_speech_status(hub.current, 'preparing_playback', hub.generation, warning='Fixed video fallback: ' + event.get('message', 'Video preparation failed'))
             if event.get('type') == 'ready':
                 hub.ready = bool(event.get('ready'))
                 await hub.notify({'type':'tv_status', **hub.tv_status()})
@@ -355,6 +396,8 @@ async def websocket(ws: WebSocket):
                 if event.get('type') in ('ended', 'failed', 'cancelled'):
                     ident = hub.current
                     hub.audio.pop(ident, None)
+                    if hub.video.pop(ident, None):
+                        hub.video_runtime.cleanup(ident)
                     hub.reserved.discard(ident)
                     hub.current = None
             await hub.dispatch()
@@ -367,26 +410,53 @@ async def websocket(ws: WebSocket):
             hub.ready = False
             if hub.current:
                 hub.audio.pop(hub.current, None)
+                if hub.video.pop(hub.current, None):
+                    hub.video_runtime.cleanup(hub.current)
                 hub.reserved.discard(hub.current)
                 await hub.set_speech_status(hub.current, 'failed', hub.generation, message='TV disconnected; active speech cancelled')
                 hub.current = None
             await hub.notify({'type':'tv_status', **hub.tv_status()})
 
 
-PUBLIC = {'web/index.html', 'web/playback-core.js', 'web/tv-controller.js', 'web/chat-bridge.js', TV}
+def review_videos():
+    return {
+        'latest': (ROOT / '.runtime/review/latest.mp4', '最新の生成動画'),
+        'pipeline': (ROOT / '.runtime/pipeline-video.mp4', 'チャット連携の検証動画'),
+        **{f'soulx-{seconds}s': (ROOT / f'.runtime/soulx-{seconds}s.mp4', f'{seconds}秒の生成テスト')
+           for seconds in (3, 5, 10)},
+    }
+
+
+@app.get('/api/soulx-review/videos')
+async def review_catalog():
+    return {'videos': [{'id': ident, 'label': label, 'bytes': path.stat().st_size,
+                        'updated_at': path.stat().st_mtime,
+                        'url': f'/api/soulx-review/video/{ident}?v={path.stat().st_mtime_ns}'}
+                       for ident, (path, label) in review_videos().items() if path.is_file()]}
+
+
+@app.get('/api/soulx-review/video/{ident}')
+async def review_video(ident: str):
+    entry = review_videos().get(ident)
+    if entry is None or not entry[0].is_file():
+        raise HTTPException(404, 'Review video not found')
+    return FileResponse(entry[0], media_type='video/mp4', headers={'Cache-Control': 'no-store'})
+
+
+PUBLIC = {'web/index.html', 'web/soulx-review.html', 'web/playback-core.js', 'web/tv-controller.js', 'web/chat-bridge.js', TV}
 PUBLIC.update(p.name for p in ROOT.iterdir() if p.suffix.lower() in ('.mp4', '.png'))
 
 
 @app.get('/')
 async def index():
-    return FileResponse(ROOT / 'web/index.html')
+    return FileResponse(ROOT / 'web/index.html', headers={'Cache-Control': 'no-cache'})
 
 
 @app.get('/{path:path}')
 async def assets(path: str):
     if path not in PUBLIC:
         raise HTTPException(404, 'Asset not found')
-    return FileResponse(ROOT / path)
+    return FileResponse(ROOT / path, headers={'Cache-Control': 'no-cache'} if Path(path).suffix in ('.html', '.js') else None)
 
 
 if __name__ == '__main__':

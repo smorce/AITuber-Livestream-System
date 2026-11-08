@@ -186,7 +186,8 @@ def test_llm_only_completed_content_is_queued(monkeypatch):
         if request.url.path.endswith('/models'):
             return httpx.Response(200, json={'data':[{'id':'test-model'}]})
         obj = json.loads(request.content)
-        assert obj['model'] == 'test-model'
+        assert obj['model'] == server.CONFIG['llm']['model']
+        assert obj['chat_template_kwargs'] == {'enable_thinking': False}
         finish = obj['messages'][0]['content']
         events = [
             {'choices':[{'delta':{'reasoning_content':'PRIVATE THOUGHT'}}]},
@@ -208,3 +209,50 @@ def test_llm_only_completed_content_is_queued(monkeypatch):
         assert len(server.hub.reserved) == 10
         assert client.post('/api/clear').status_code == 200
         assert not server.hub.reserved
+
+
+def test_video_range_and_expiration(tmp_path):
+    with TestClient(app) as client:
+        path = tmp_path / 'ready.mp4'
+        path.write_bytes(b'0123456789')
+        server.hub.video['a' * 32] = path
+        response = client.get('/api/video/' + 'a' * 32, headers={'Range': 'bytes=2-5'})
+        assert response.status_code == 206
+        assert response.content == b'2345'
+        assert client.get('/api/video/unknown').status_code == 404
+        server.hub.video.clear()
+        assert client.get('/api/video/' + 'a' * 32).status_code == 404
+
+
+def test_video_failure_keeps_audio_and_queue(monkeypatch):
+    async def run():
+        h = Hub()
+        finished = asyncio.Event()
+        async def notify(event):
+            if event.get('phase') == 'waiting':
+                finished.set()
+        monkeypatch.setattr(h, 'notify', notify)
+        async def synthesize(text):
+            from test_video_runtime import wav
+            return wav()
+        async def generate(ident, audio):
+            raise RuntimeError('CUDA out of memory')
+        monkeypatch.setattr(h.speech, 'synthesize', synthesize)
+        monkeypatch.setattr(h.video_runtime, 'generate', generate)
+        ident = 'a' * 32
+        h.reserved.add(ident)
+        h.jobs.put_nowait((ident, 0, '一文。'))
+        worker = asyncio.create_task(h.worker())
+        try:
+            await asyncio.wait_for(finished.wait(), 2)
+            assert ident in h.audio and ident in h.reserved
+            assert list(h.pending) == [ident]
+            assert ident not in h.video
+            assert 'CUDA out of memory' in h.speech_states[ident]['warning']
+        finally:
+            worker.cancel()
+            try:
+                await worker
+            except asyncio.CancelledError:
+                pass
+    asyncio.run(run())

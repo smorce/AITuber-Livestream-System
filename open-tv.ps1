@@ -17,7 +17,7 @@ try {
 
 $profilePath = Join-Path $env:LOCALAPPDATA 'AITuber-Livestream-System\Chrome-TV'
 $tvFile = [Uri]::EscapeDataString('ブラウン管TV_映像エディター_XYZデバッグ版.html')
-$tvUrl = "http://127.0.0.1:17863/$($tvFile)?autoplay=1"
+$tvUrl = "http://127.0.0.1:17863/$($tvFile)?autoplay=1&v=lipsync-1"
 $chromeArguments = @(
     "--user-data-dir=`"$profilePath`"",
     '--autoplay-policy=no-user-gesture-required',

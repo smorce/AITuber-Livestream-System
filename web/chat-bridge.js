@@ -17,7 +17,7 @@
      document.querySelector('#log').appendChild(row);rows.set(state.id,row);
    }
    const labels={queued:'音声合成の順番待ち',loading:'音声モデル・基準音声を読み込み中（初回は時間がかかります）',
-     synthesizing:'音声合成中',retrying_cpu:'GPUでの処理に失敗：CPUで再試行中',
+     video_loading:'動画生成の準備中',video_generating:'SoulXでリップシンク動画を生成中',video_encoding:'音声と動画を結合中',video_fallback:'動画生成失敗・固定動画で再生',synthesizing:'音声合成中',retrying_cpu:'GPUでの処理に失敗：CPUで再試行中',
      waiting:!tv.connected?'合成完了・TV未接続':!tv.ready?'合成完了・TVの再生準備待ち':'合成完了・前の音声の終了待ち',
      preparing_playback:'合成完了・音声準備／動画終端待ち',playing:'音声再生中',finishing:'音声終了・発話動画の終端待ち',
      completed:'音声再生完了',failed:'音声処理に失敗',cancelled:'音声処理を中止'};
@@ -25,6 +25,7 @@
    if(!connected&&!terminal.has(state.phase))text='音声：接続断・現在の状態を確認できません（再接続中）';
    if(['loading','synthesizing','retrying_cpu'].includes(state.phase)&&state.total)text+=` · ${state.completed||0}/${state.total}文 完了`;
    if(!terminal.has(state.phase)&&state.created_at)text+=` · 経過${Math.max(0,Math.floor(Date.now()/1000-state.created_at))}秒`;
+   if(state.warning)text+=' · '+state.warning;
    if(state.device)text+=' · '+state.device;
    if(state.phase==='failed'&&state.message)text+=' · '+state.message;
    if(row.textContent!==text)row.textContent=text;

@@ -189,6 +189,7 @@ function loadEditorTransform(){
 // 2つのvideo要素を別々に保持して再利用し、元映像をデコードし直さずに切り替える。
 function syncVideoSettings(){
   for(const v of videos){v.muted=$('mute').checked;v.playbackRate=Number($('speed').value);v.loop=false;}
+  window.AITuberTV?.syncAudio();
 }
 function updateSpeechUI(){
  const playingSpeech=isVideo&&activeEditorClip()===speechVideo;
@@ -652,5 +653,5 @@ $('loadBtn').onclick=()=>$('settingsFile').click();$('settingsFile').onchange=as
 syncVideoSettings();updateSpeechUI();render();
 </script>
 <script src="web/playback-core.js"></script>
-<script src="web/tv-controller.js"></script>
+<script src="web/tv-controller.js?v=3"></script>
 </body></html>
