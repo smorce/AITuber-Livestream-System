@@ -13,7 +13,7 @@ import wave
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, RedirectResponse, Response, StreamingResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from speech_runtime import SpeechRuntime
@@ -21,7 +21,7 @@ from video_runtime import VideoRuntime
 
 ROOT = Path(__file__).resolve().parent
 CONFIG = tomllib.loads((ROOT / 'config.toml').read_text(encoding='utf-8'))
-TV = 'ブラウン管TV_映像エディター_XYZデバッグ版.html'
+TV = 'ブラウン管TV_配信プラットフォーム.html'
 log = logging.getLogger('aituber')
 
 
@@ -193,7 +193,7 @@ async def lifespan(app):
     await hub.speech.stop()
 
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(title='ブラウン管TV 配信プラットフォーム', lifespan=lifespan)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', '[::1]', 'testserver'])
 
 
@@ -450,6 +450,12 @@ PUBLIC.update(p.name for p in ROOT.iterdir() if p.suffix.lower() in ('.mp4', '.p
 @app.get('/')
 async def index():
     return FileResponse(ROOT / 'web/index.html', headers={'Cache-Control': 'no-cache'})
+
+
+@app.get('/ブラウン管TV_映像エディター_XYZデバッグ版.html')
+async def legacy_tv(request: Request):
+    suffix = '?' + request.url.query if request.url.query else ''
+    return RedirectResponse('/' + TV + suffix, status_code=307)
 
 
 @app.get('/{path:path}')

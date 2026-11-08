@@ -21,7 +21,7 @@ const path=require('node:path');
    fs.writeFileSync(path.join(root,'pipeline-video.mp4'),body);videoSaved=true;
    await route.fulfill({response,body});
   });
-  await tv.goto('http://127.0.0.1:17863/'+encodeURIComponent('ブラウン管TV_映像エディター_XYZデバッグ版.html')+'?autoplay=1');
+  await tv.goto('http://127.0.0.1:17863/'+encodeURIComponent('ブラウン管TV_配信プラットフォーム.html')+'?autoplay=1');
   await tv.waitForFunction(()=>AITuberTV.snapshot().owner&&AITuberTV.snapshot().device==='running');
   await chat.evaluate(()=>{
    window.pipelineStates=[];

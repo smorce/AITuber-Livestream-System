@@ -85,7 +85,7 @@ for(const automatic of [false,true])test(automatic?'ボタン操作なしで音�
    });
    ws.send(JSON.stringify({type:'hello',owner:false,generation:0,flag_lead:.3,audio_lead:.15,off_lead:.2,max_idle_overlap:.3}));
   });
-  await page.goto(base+'/'+encodeURIComponent('ブラウン管TV_映像エディター_XYZデバッグ版.html')+(automatic?'?autoplay=1':''));
+  await page.goto(base+'/'+encodeURIComponent('ブラウン管TV_配信プラットフォーム.html')+(automatic?'?autoplay=1':''));
   if(!automatic){
    await page.waitForFunction(()=>document.getElementById('status').textContent.includes('プレビュー'));
    await page.locator('#play').click();
@@ -129,7 +129,7 @@ test('実動画で再生境界・中断・重複・切替失敗を検証する',
     ws.onMessage(raw=>{const e=JSON.parse(raw);messages.push(e);if(e.type==='ping')ws.send(JSON.stringify({type:'pong'}));});
     ws.send(JSON.stringify({type:'hello',owner:true,generation:0,flag_lead:.3,audio_lead:.15,off_lead:.2,max_idle_overlap:.3}));
    });
-   await page.goto(base+'/'+encodeURIComponent('ブラウン管TV_映像エディター_XYZデバッグ版.html'));
+   await page.goto(base+'/'+encodeURIComponent('ブラウン管TV_配信プラットフォーム.html'));
    await page.waitForFunction(()=>AITuberTV.snapshot().device==='running'&&speechVideo.readyState>=2&&videos.every(v=>v.readyState>=2));
    await page.evaluate(()=>{
     $('speed').value='2';$('speed').dispatchEvent(new Event('input'));

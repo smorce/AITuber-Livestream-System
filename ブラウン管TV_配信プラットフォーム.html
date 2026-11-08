@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ブラウン管TV | 映像エディター（位置比較デバッグ付き）</title>
+<title>ブラウン管TV 配信プラットフォーム</title>
 <style>
 :root{color-scheme:dark;--panel:#17191d;--line:#303239;--fg:#f0eee9;--muted:#a7a7ab;--accent:#daaa72}
 *{box-sizing:border-box}body{margin:0;background:#101114;color:var(--fg);font-family:system-ui,-apple-system,'Hiragino Kaku Gothic ProN','Yu Gothic',sans-serif}
@@ -58,7 +58,7 @@ input[type=range]{width:100%;accent-color:var(--accent);cursor:pointer;height:15
 <body>
 <div class="app">
   <main class="stage-area">
-    <header class="topbar"><div><div class="eyebrow">RETRO SCREEN STUDIO</div><h1>ブラウン管TV 映像エディター</h1></div><span class="chip">LIVE PREVIEW</span></header>
+    <header class="topbar"><div><div class="eyebrow">CRT STREAMING PLATFORM</div><h1>ブラウン管TV 配信プラットフォーム</h1></div><span class="chip">配信中</span></header>
     <div class="preview-space"><div class="tv" id="tv"><div class="screen-backdrop" aria-hidden="true"></div>
       <div class="screen" id="screen"><canvas class="screen-canvas" id="crtCanvas"></canvas><div class="debug-guides" id="debugGuides"><span class="target"></span></div><video class="media" id="video" playsinline autoplay muted preload="auto"></video><video class="media" id="speechVideo" playsinline muted preload="auto"></video><img class="media" id="still" alt="選択した画像" style="display:none"></div>
       <img class="tv-frame" id="frame" alt="ブラウン管テレビの枠">

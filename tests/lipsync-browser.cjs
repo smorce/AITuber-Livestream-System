@@ -23,7 +23,7 @@ test('生成動画は終端で切り替え音声を重複させず終了し、�
     peer=ws;ws.onMessage(raw=>{const event=JSON.parse(raw);messages.push(event);if(event.type==='ping')ws.send(JSON.stringify({type:'pong'}));});
     ws.send(JSON.stringify({type:'hello',owner:true,generation:0,flag_lead:.3,audio_lead:.15,off_lead:.2,max_idle_overlap:.3}));
    });
-   await page.goto(base+'/'+encodeURIComponent('ブラウン管TV_映像エディター_XYZデバッグ版.html'));
+   await page.goto(base+'/'+encodeURIComponent('ブラウン管TV_配信プラットフォーム.html'));
    await page.waitForFunction(()=>window.AITuberTV?.snapshot().device==='running'&&videos.every(v=>v.readyState>=2));
    await page.evaluate(()=>{video.currentTime=video.duration-3;});
    await page.waitForFunction(()=>!video.seeking);

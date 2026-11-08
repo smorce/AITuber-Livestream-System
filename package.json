@@ -1,7 +1,7 @@
 {
   "name": "aituber-livestream-system",
   "version": "1.0.0",
-  "description": "AITuber配信画面の再生制御テスト",
+  "description": "ブラウン管TV 配信プラットフォームの再生制御テスト",
   "scripts": {
     "test": "node --test tests/*.test.cjs",
     "test:browser": "node --test --test-concurrency=1 tests/browser.cjs tests/lipsync-browser.cjs"
